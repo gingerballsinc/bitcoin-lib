@@ -113,36 +113,7 @@ class CryptoSpec extends FlatSpec {
         assert(sig == s)
     }
   }
-
-  def serialize[T](t: T): ByteVector = {
-    val bos = new ByteArrayOutputStream()
-    val oos = new ObjectOutputStream(bos)
-    oos.writeObject(t)
-    ByteVector.view(bos.toByteArray)
-  }
-
-  def deserialize[T](input: ByteVector): T = {
-    val bis = new ByteArrayInputStream(input.toArray)
-    val osi = new ObjectInputStream(bis)
-    osi.readObject().asInstanceOf[T]
-  }
-
-  it should "serialize points and scalars" in {
-    val secret = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
-    val point = secret.publicKey
-
-    assert(deserialize[PrivateKey](serialize(secret)) == secret)
-    assert(deserialize[PublicKey](serialize(point)) == point)
-  }
-
-  it should "serialize public and private keys" in {
-    val priv = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
-    val pub = priv.publicKey
-
-    assert(deserialize[PrivateKey](serialize(priv)) == priv)
-    assert(deserialize[PublicKey](serialize(pub)) == pub)
-  }
-
+  
   it should "recover public keys from signatures (basic test)" in {
     val priv = PrivateKey(hex"0101010101010101010101010101010101010101010101010101010101010101")
     val message = hex"0202020202020202020202020202020202020202020202020202020202020202"
