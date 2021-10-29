@@ -1,5 +1,6 @@
 package fr.acinq.bitcoinscala
 
+import fr.acinq.bitcoinscala.Crypto.PrivateKey
 import org.scalatest.FlatSpec
 import scodec.bits._
 
@@ -112,6 +113,24 @@ class DeterministicWalletSpec extends FlatSpec {
     val m_0h_1h = derivePrivateKey(m_0h, hardened(1))
     assert(encode(m_0h_1h, xprv) === "xprv9xJocDuwtYCMNAo3Zw76WENQeAS6WGXQ55RCy7tDJ8oALr4FWkuVoHJeHVAcAqiZLE7Je3vZJHxspZdFHfnBEjHqU5hG1Jaj32dVoS6XLT1")
     assert(encode(publicKey(m_0h_1h), xpub) === "xpub6BJA1jSqiukeaesWfxe6sNK9CCGaujFFSJLomWHprUL9DePQ4JDkM5d88n49sMGJxrhpjazuXYWdMf17C9T5XnxkopaeS7jGk1GyyVziaMt")
+  }
+
+  it should "be possible to go up the private key chain if you have the master pub key and a child private key!!" in {
+    val m = generate(hex"000102030405060708090a0b0c0d0e0f")
+    assert(encode(m, xprv) === "xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi")
+
+    val m_pub = publicKey(m)
+    assert(encode(m_pub, xpub) === "xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8")
+    assert(fingerprint(m) === 876747070)
+
+    //
+    // now we have: the master public key, and a child private key, and we want to climb the tree back up
+    // to the master private key
+    val m42 = derivePrivateKey(m, 42L)
+    val I = Crypto.hmac512(m_pub.chaincode, m_pub.publickeybytes ++ writeUInt32(42, ByteOrder.BIG_ENDIAN))
+    val IL = I.take(32)
+    val recovered = m42.privateKey - PrivateKey(IL)
+    assert(recovered == m.privateKey)
   }
 
   it should "parse string-formatted derivation paths" in {

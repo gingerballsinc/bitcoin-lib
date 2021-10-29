@@ -290,24 +290,18 @@ object Transaction extends BtcSerializer[Transaction] {
   def signInput(tx: Transaction, inputIndex: Int, previousOutputScript: Seq[ScriptElt], sighashType: Int, amount: Satoshi, signatureVersion: Int, privateKey: PrivateKey): ByteVector =
     signInput(tx, inputIndex, Script.write(previousOutputScript), sighashType, amount, signatureVersion, privateKey)
 
-  def correctlySpends(tx: Transaction, previousOutputs: Map[OutPoint, TxOut], scriptFlags: Int, callback: Option[Runner.Callback]): Unit = {
+  def correctlySpends(tx: Transaction, previousOutputs: Map[OutPoint, TxOut], scriptFlags: Int): Unit = {
     fr.acinq.bitcoin.Transaction.correctlySpends(tx, previousOutputs.map { case (o, t) => scala2kmp(o) -> scala2kmp(t) }.toMap.asJava, scriptFlags)
   }
 
-  def correctlySpends(tx: Transaction, previousOutputs: Map[OutPoint, TxOut], scriptFlags: Int): Unit =
-    correctlySpends(tx, previousOutputs, scriptFlags, None)
-
-  def correctlySpends(tx: Transaction, inputs: Seq[Transaction], scriptFlags: Int, callback: Option[Runner.Callback]): Unit = {
+  def correctlySpends(tx: Transaction, inputs: Seq[Transaction], scriptFlags: Int): Unit = {
     val prevouts = tx.txIn.map(_.outPoint).map(outpoint => {
       val prevTx = inputs.find(_.txid == outpoint.txid).get
       val prevOutput = prevTx.txOut(outpoint.index.toInt)
       outpoint -> prevOutput
     }).toMap
-    correctlySpends(tx, prevouts, scriptFlags, callback)
+    correctlySpends(tx, prevouts, scriptFlags)
   }
-
-  def correctlySpends(tx: Transaction, inputs: Seq[Transaction], scriptFlags: Int): Unit =
-    correctlySpends(tx, inputs, scriptFlags, None)
 }
 
 /**

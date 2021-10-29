@@ -44,9 +44,4 @@ class ScriptSpec extends FlatSpec {
       assert(Script.decodeNumber(Script.encodeNumber(i), checkMinimalEncoding = true) === i)
     }
   }
-  it should "encode/decode booleans" in {
-    assert(Script.castToBoolean(ByteVector.empty) === false)
-    assert(Script.castToBoolean(ByteVector(0, 0, 0)) === false)
-    assert(Script.castToBoolean(hex"80") === false)
-  }
 }

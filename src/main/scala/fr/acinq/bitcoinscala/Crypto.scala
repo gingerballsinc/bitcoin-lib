@@ -36,7 +36,7 @@ object Crypto {
      * @param prefix Private key prefix
      * @return the private key in Base58 (WIF) compressed format
      */
-    def toBase58(prefix: Byte) = Base58Check.encode(prefix, value.bytes :+ 1.toByte)
+    def toBase58(prefix: Byte) = priv.toBase58(prefix)
   }
 
   object PrivateKey {
@@ -56,9 +56,8 @@ object Crypto {
     }
 
     def fromBase58(value: String, prefix: Byte): (PrivateKey, Boolean) = {
-      require(Set(Base58.Prefix.SecretKey, Base58.Prefix.SecretKeyTestnet, Base58.Prefix.SecretKeySegnet).contains(prefix), "invalid base 58 prefix for a private key")
-      val (`prefix`, data) = Base58Check.decode(value)
-      fromBin(data)
+      val p = fr.acinq.bitcoin.PrivateKey.fromBase58(value, prefix)
+      (p.getFirst, p.getSecond)
     }
   }
 
@@ -91,7 +90,7 @@ object Crypto {
 
     def toUncompressedBin: ByteVector = ByteVector.view(pub.toUncompressedBin)
 
-    override def toString = value.toHex
+    override def toString = pub.toString
   }
 
 
@@ -187,7 +186,6 @@ object Crypto {
   }
 
   def isDefinedHashtypeSignature(sig: ByteVector): Boolean = fr.acinq.bitcoin.Crypto.isDefinedHashtypeSignature(sig.toArray)
-
 
   def compact2der(signature: ByteVector64): ByteVector = fr.acinq.bitcoin.Crypto.compact2der(signature)
 
