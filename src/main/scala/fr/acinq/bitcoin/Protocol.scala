@@ -4,16 +4,18 @@ import java.io._
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 import java.nio.{ByteBuffer, ByteOrder}
 
+import scodec.bits._
+
 import scala.collection.mutable.ArrayBuffer
 
 /**
-  * see https://en.bitcoin.it/wiki/Protocol_specification
-  */
+ * see https://en.bitcoin.it/wiki/Protocol_specification
+ */
 
 object BinaryData {
-  def apply(hex: String): BinaryData = hex
+  def apply(hex: String): String = hex
 
-  val empty: BinaryData = Seq.empty[Byte]
+  val empty: Seq[Byte] = Seq.empty[Byte]
 }
 
 case class BinaryData(data: Seq[Byte]) {
@@ -22,10 +24,41 @@ case class BinaryData(data: Seq[Byte]) {
   override def toString = toHexString(data)
 }
 
+case class ByteVector32(bytes: ByteVector) {
+  require(bytes.size == 32, s"size must be 32 bytes, is ${bytes.size} bytes")
+
+  def reverse: ByteVector32 = ByteVector32(bytes.reverse)
+
+  override def toString: String = bytes.toHex
+}
+
+object ByteVector32 {
+  val Zeroes = ByteVector32(ByteVector.view(fromHexString("0000000000000000000000000000000000000000000000000000000000000000")))
+  val One = ByteVector32(ByteVector.view(fromHexString("0100000000000000000000000000000000000000000000000000000000000000")))
+
+  def fromValidHex(str: String) = ByteVector32(ByteVector.view(fromHexString(str)))
+
+  implicit def byteVector32toByteVector(h: ByteVector32): ByteVector = h.bytes
+}
+
+case class ByteVector64(bytes: ByteVector) {
+  require(bytes.size == 64, s"size must be 64 bytes, is ${bytes.size} bytes")
+
+  override def toString: String = bytes.toHex
+}
+
+object ByteVector64 {
+  val Zeroes = ByteVector64(ByteVector.view(fromHexString("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")))
+
+  def fromValidHex(str: String) = ByteVector64(ByteVector.view(fromHexString(str)))
+
+  implicit def byteVector64toByteVector(h: ByteVector64): ByteVector = h.bytes
+}
+
 object Protocol {
   /**
-    * basic serialization functions
-    */
+   * basic serialization functions
+   */
 
   val PROTOCOL_VERSION = 70015
 
@@ -39,18 +72,18 @@ object Protocol {
     uint16(bin, order)
   }
 
-  def uint16(input: BinaryData, order: ByteOrder): Int = {
+  def uint16(input: Array[Byte], order: ByteOrder): Int = {
     val buffer = ByteBuffer.wrap(input).order(order)
     buffer.getShort & 0xFFFF
   }
 
-  def writeUInt16(input: Int, out: OutputStream, order: ByteOrder = ByteOrder.LITTLE_ENDIAN): Unit = out.write(writeUInt16(input, order))
+  def writeUInt16(input: Int, out: OutputStream, order: ByteOrder = ByteOrder.LITTLE_ENDIAN): Unit = out.write(writeUInt16(input, order).toArray)
 
-  def writeUInt16(input: Int, order: ByteOrder): BinaryData = {
+  def writeUInt16(input: Int, order: ByteOrder): ByteVector = {
     val bin = new Array[Byte](2)
     val buffer = ByteBuffer.wrap(bin).order(order)
     buffer.putShort(input.toShort)
-    bin
+    ByteVector.view(bin)
   }
 
   def uint32(input: InputStream, order: ByteOrder = ByteOrder.LITTLE_ENDIAN): Long = {
@@ -59,21 +92,25 @@ object Protocol {
     uint32(bin, order)
   }
 
-  def uint32(input: BinaryData, order: ByteOrder): Long = {
+  def uint32(input: Array[Byte], order: ByteOrder): Long = {
     val buffer = ByteBuffer.wrap(input).order(order)
     buffer.getInt() & 0xFFFFFFFFL
   }
 
-  def writeUInt32(input: Long, out: OutputStream, order: ByteOrder = ByteOrder.LITTLE_ENDIAN): Unit = out.write(writeUInt32(input, order))
+  def uint32(input: ByteVector, order: ByteOrder): Long = {
+    input.toLong(false, ByteOrdering.fromJava(order))
+  }
 
-  def writeUInt32(input: Long, order: ByteOrder): Array[Byte] = {
+  def writeUInt32(input: Long, out: OutputStream, order: ByteOrder = ByteOrder.LITTLE_ENDIAN): Unit = out.write(writeUInt32(input, order).toArray)
+
+  def writeUInt32(input: Long, order: ByteOrder): ByteVector = {
     val bin = new Array[Byte](4)
     val buffer = ByteBuffer.wrap(bin).order(order)
     buffer.putInt((input & 0xffffffff).toInt)
-    bin
+    ByteVector.view(bin)
   }
 
-  def writeUInt32(input: Long): Array[Byte] = writeUInt32(input, ByteOrder.LITTLE_ENDIAN)
+  def writeUInt32(input: Long): ByteVector = writeUInt32(input, ByteOrder.LITTLE_ENDIAN)
 
   def uint64(input: InputStream, order: ByteOrder = ByteOrder.LITTLE_ENDIAN): Long = {
     val bin = new Array[Byte](8)
@@ -81,18 +118,18 @@ object Protocol {
     uint64(bin, order)
   }
 
-  def uint64(input: BinaryData, order: ByteOrder): Long = {
+  def uint64(input: Array[Byte], order: ByteOrder): Long = {
     val buffer = ByteBuffer.wrap(input).order(order)
     buffer.getLong()
   }
 
-  def writeUInt64(input: Long, out: OutputStream, order: ByteOrder = ByteOrder.LITTLE_ENDIAN): Unit = out.write(writeUInt64(input, order))
+  def writeUInt64(input: Long, out: OutputStream, order: ByteOrder = ByteOrder.LITTLE_ENDIAN): Unit = out.write(writeUInt64(input, order).toArray)
 
-  def writeUInt64(input: Long, order: ByteOrder): Array[Byte] = {
+  def writeUInt64(input: Long, order: ByteOrder): ByteVector = {
     val bin = new Array[Byte](8)
     val buffer = ByteBuffer.wrap(bin).order(order)
     buffer.putLong(input)
-    bin
+    ByteVector.view(bin)
   }
 
   def varint(blob: Array[Byte]): Long = varint(new ByteArrayInputStream(blob))
@@ -122,32 +159,34 @@ object Protocol {
     }
   }
 
-  def bytes(input: InputStream, size: Long): BinaryData = bytes(input, size.toInt)
+  def bytes(input: InputStream, size: Long): ByteVector = bytes(input, size.toInt)
 
-  def bytes(input: InputStream, size: Int): BinaryData = {
+  def bytes(input: InputStream, size: Int): ByteVector = {
     val blob = new Array[Byte](size)
     if (size > 0) {
       val count = input.read(blob)
       if (count < size) throw new IOException("not enough data to read from")
     }
-    blob
+    ByteVector.view(blob)
   }
 
   def writeBytes(input: Array[Byte], out: OutputStream): Unit = out.write(input)
 
+  def writeBytes(input: ByteVector, out: OutputStream): Unit = out.write(input.toArray)
+
   def varstring(input: InputStream): String = {
     val length = varint(input)
-    new String(bytes(input, length), "UTF-8")
+    new String(bytes(input, length).toArray, "UTF-8")
   }
 
-  def writeVarstring(input: String, out: OutputStream) = {
+  def writeVarstring(input: String, out: OutputStream): Unit = {
     writeVarint(input.length, out)
     writeBytes(input.getBytes("UTF-8"), out)
   }
 
-  def hash(input: InputStream): BinaryData = bytes(input, 32) // a hash is always 256 bits
+  def hash(input: InputStream): ByteVector32 = ByteVector32(bytes(input, 32)) // a hash is always 256 bits
 
-  def script(input: InputStream): BinaryData = {
+  def script(input: InputStream): ByteVector = {
     val length = varint(input) // read size
     bytes(input, length.toInt) // read bytes
   }
@@ -177,7 +216,7 @@ object Protocol {
     for (_ <- 1L to count) {
       items += reader(input, protocolVersion)
     }
-    items
+    items.toSeq
   }
 
   def readCollection[T](input: InputStream, reader: (InputStream, Long) => T, protocolVersion: Long): Seq[T] = readCollection(input, reader, None, protocolVersion)
@@ -197,56 +236,56 @@ import fr.acinq.bitcoin.Protocol._
 
 trait BtcSerializer[T] {
   /**
-    * write a message to a stream
-    *
-    * @param t   message
-    * @param out output stream
-    */
+   * write a message to a stream
+   *
+   * @param t   message
+   * @param out output stream
+   */
   def write(t: T, out: OutputStream, protocolVersion: Long): Unit
 
   def write(t: T, out: OutputStream): Unit = write(t, out, PROTOCOL_VERSION)
 
   /**
-    * write a message to a byte array
-    *
-    * @param t message
-    * @return a serialized message
-    */
-  def write(t: T, protocolVersion: Long): BinaryData = {
+   * write a message to a byte array
+   *
+   * @param t message
+   * @return a serialized message
+   */
+  def write(t: T, protocolVersion: Long): ByteVector = {
     val out = new ByteArrayOutputStream()
     write(t, out, protocolVersion)
-    out.toByteArray
+    ByteVector.view(out.toByteArray)
   }
 
-  def write(t: T): BinaryData = write(t, PROTOCOL_VERSION)
+  def write(t: T): ByteVector = write(t, PROTOCOL_VERSION)
 
   /**
-    * read a message from a stream
-    *
-    * @param in input stream
-    * @return a deserialized message
-    */
+   * read a message from a stream
+   *
+   * @param in input stream
+   * @return a deserialized message
+   */
   def read(in: InputStream, protocolVersion: Long): T
 
   def read(in: InputStream): T = read(in, PROTOCOL_VERSION)
 
   /**
-    * read a message from a byte array
-    *
-    * @param in serialized message
-    * @return a deserialized message
-    */
-  def read(in: Seq[Byte], protocolVersion: Long): T = read(new ByteArrayInputStream(in.toArray), protocolVersion)
+   * read a message from a byte array
+   *
+   * @param in serialized message
+   * @return a deserialized message
+   */
+  def read(in: Array[Byte], protocolVersion: Long): T = read(new ByteArrayInputStream(in), protocolVersion)
 
-  def read(in: Seq[Byte]): T = read(in, PROTOCOL_VERSION)
+  def read(in: Array[Byte]): T = read(in, PROTOCOL_VERSION)
 
   /**
-    * read a message from a hex string
-    *
-    * @param in message binary data in hex format
-    * @return a deserialized message of type T
-    */
-  def read(in: String, protocolVersion: Long): T = read(fromHexString(in), protocolVersion)
+   * read a message from a hex string
+   *
+   * @param in message binary data in hex format
+   * @return a deserialized message of type T
+   */
+  def read(in: String, protocolVersion: Long): T = read(in, protocolVersion)
 
   def read(in: String): T = read(in, PROTOCOL_VERSION)
 
@@ -261,6 +300,7 @@ object Message extends BtcSerializer[Message] {
   val MagicMain = 0xD9B4BEF9L
   val MagicTestNet = 0xDAB5BFFAL
   val MagicTestnet3 = 0x0709110BL
+  val MagicSigNet = 0x40CF030AL
   val MagicNamecoin = 0xFEB4BEF9L
   val MagicSegnet = 0xC4A1ABDC
 
@@ -273,13 +313,14 @@ object Message extends BtcSerializer[Message] {
     val length = uint32(in)
     require(length < 2000000, "invalid payload length")
     val checksum = uint32(in)
-    val payload = new Array[Byte](length.toInt)
-    in.read(payload)
-    require(checksum == uint32(new ByteArrayInputStream(Crypto.hash256(payload).take(4).toArray)), "invalid checksum")
+    val payload_array = new Array[Byte](length.toInt)
+    in.read(payload_array)
+    val payload = ByteVector.view(payload_array)
+    require(checksum == uint32(Crypto.hash256(payload).toArray.take(4), order = ByteOrder.LITTLE_ENDIAN), "invalid checksum")
     Message(magic, command, payload)
   }
 
-  override def write(input: Message, out: OutputStream, protocolVersion: Long) = {
+  override def write(input: Message, out: OutputStream, protocolVersion: Long): Unit = {
     writeUInt32(input.magic.toInt, out)
     val buffer = new Array[Byte](12)
     input.command.getBytes("ISO-8859-1").copyToArray(buffer)
@@ -287,18 +328,18 @@ object Message extends BtcSerializer[Message] {
     writeUInt32(input.payload.length, out)
     val checksum = Crypto.hash256(input.payload).take(4).toArray
     writeBytes(checksum, out)
-    writeBytes(input.payload, out)
+    writeBytes(input.payload.toArray, out)
   }
 }
 
 /**
-  * Bitcoin message exchanged by nodes over the network
-  *
-  * @param magic   Magic value indicating message origin network, and used to seek to next message when stream state is unknown
-  * @param command ASCII string identifying the packet content, NULL padded (non-NULL padding results in packet rejected)
-  * @param payload The actual data
-  */
-case class Message(magic: Long, command: String, payload: BinaryData) extends BtcSerializable[Message] {
+ * Bitcoin message exchanged by nodes over the network
+ *
+ * @param magic   Magic value indicating message origin network, and used to seek to next message when stream state is unknown
+ * @param command ASCII string identifying the packet content, NULL padded (non-NULL padding results in packet rejected)
+ * @param payload The actual data
+ */
+case class Message(magic: Long, command: String, payload: ByteVector) extends BtcSerializable[Message] {
   require(command.length <= 12)
 
   override def serializer: BtcSerializer[Message] = Message
@@ -315,7 +356,7 @@ object NetworkAddressWithTimestamp extends BtcSerializer[NetworkAddressWithTimes
     NetworkAddressWithTimestamp(time, services, address, port)
   }
 
-  override def write(input: NetworkAddressWithTimestamp, out: OutputStream, protocolVersion: Long) = {
+  override def write(input: NetworkAddressWithTimestamp, out: OutputStream, protocolVersion: Long): Unit = {
     writeUInt32(input.time.toInt, out)
     writeUInt64(input.services, out)
     input.address match {
@@ -341,7 +382,7 @@ object NetworkAddress extends BtcSerializer[NetworkAddress] {
     NetworkAddress(services, address, port)
   }
 
-  override def write(input: NetworkAddress, out: OutputStream, protocolVersion: Long) = {
+  override def write(input: NetworkAddress, out: OutputStream, protocolVersion: Long): Unit = {
     writeUInt64(input.services, out)
     input.address match {
       case _: Inet4Address => writeBytes(fromHexString("00000000000000000000ffff"), out)
@@ -366,13 +407,13 @@ object Version extends BtcSerializer[Version] {
     val nonce = uint64(in)
     val length = varint(in)
     val buffer = bytes(in, length)
-    val user_agent = new String(buffer, "ISO-8859-1")
+    val user_agent = new String(buffer.toArray, "ISO-8859-1")
     val start_height = uint32(in)
     val relay = if (uint8(in) == 0) false else true
     Version(version, services, timestamp, addr_recv, addr_from, nonce, user_agent, start_height, relay)
   }
 
-  override def write(input: Version, out: OutputStream, protocolVersion: Long) = {
+  override def write(input: Version, out: OutputStream, protocolVersion: Long): Unit = {
     writeUInt32(input.version.toInt, out)
     writeUInt64(input.services, out)
     writeUInt64(input.timestamp, out)
@@ -387,19 +428,19 @@ object Version extends BtcSerializer[Version] {
 }
 
 /**
-  *
-  * @param version      Identifies protocol version being used by the node
-  * @param services     bitfield of features to be enabled for this connection
-  * @param timestamp    standard UNIX timestamp in seconds
-  * @param addr_recv    The network address of the node receiving this message
-  * @param addr_from    The network address of the node emitting this message
-  * @param nonce        Node random nonce, randomly generated every time a version packet is sent. This nonce is used to detect
-  *                     connections to self.
-  * @param user_agent   User Agent
-  * @param start_height The last block received by the emitting node
-  * @param relay        Whether the remote peer should announce relayed transactions or not, see BIP 0037,
-  *                     since version >= 70001
-  */
+ *
+ * @param version      Identifies protocol version being used by the node
+ * @param services     bitfield of features to be enabled for this connection
+ * @param timestamp    standard UNIX timestamp in seconds
+ * @param addr_recv    The network address of the node receiving this message
+ * @param addr_from    The network address of the node emitting this message
+ * @param nonce        Node random nonce, randomly generated every time a version packet is sent. This nonce is used to detect
+ *                     connections to self.
+ * @param user_agent   User Agent
+ * @param start_height The last block received by the emitting node
+ * @param relay        Whether the remote peer should announce relayed transactions or not, see BIP 0037,
+ *                     since version >= 70001
+ */
 case class Version(version: Long, services: Long, timestamp: Long, addr_recv: NetworkAddress, addr_from: NetworkAddress, nonce: Long, user_agent: String, start_height: Long, relay: Boolean) extends BtcSerializable[Version] {
   override def serializer: BtcSerializer[Version] = Version
 }
@@ -422,13 +463,13 @@ object InventoryVector extends BtcSerializer[InventoryVector] {
 
   override def write(t: InventoryVector, out: OutputStream, protocolVersion: Long): Unit = {
     writeUInt32(t.`type`.toInt, out)
-    writeBytes(t.hash, out)
+    writeBytes(t.hash.toArray, out)
   }
 
   override def read(in: InputStream, protocolVersion: Long): InventoryVector = InventoryVector(uint32(in), hash(in))
 }
 
-case class InventoryVector(`type`: Long, hash: BinaryData) extends BtcSerializable[InventoryVector] {
+case class InventoryVector(`type`: Long, hash: ByteVector) extends BtcSerializable[InventoryVector] {
   require(hash.length == 32, "invalid hash length")
 
   override def serializer: BtcSerializer[InventoryVector] = InventoryVector
@@ -447,16 +488,16 @@ case class Inventory(inventory: Seq[InventoryVector]) extends BtcSerializable[In
 object Getheaders extends BtcSerializer[Getheaders] {
   override def write(t: Getheaders, out: OutputStream, protocolVersion: Long): Unit = {
     writeUInt32(t.version.toInt, out)
-    writeCollection(t.locatorHashes, (h: BinaryData, o: OutputStream, _: Long) => o.write(h), out, protocolVersion)
-    writeBytes(t.stopHash, out)
+    writeCollection(t.locatorHashes, (h: ByteVector, o: OutputStream, _: Long) => o.write(h.toArray), out, protocolVersion)
+    writeBytes(t.stopHash.toArray, out)
   }
 
   override def read(in: InputStream, protocolVersion: Long): Getheaders = {
-    Getheaders(version = uint32(in), locatorHashes = readCollection[BinaryData](in, (i: InputStream, _: Long) => BinaryData(hash(i)), protocolVersion), stopHash = hash(in))
+    Getheaders(version = uint32(in), locatorHashes = readCollection[ByteVector](in, (i: InputStream, _: Long) => hash(i).bytes, protocolVersion), stopHash = hash(in))
   }
 }
 
-case class Getheaders(version: Long, locatorHashes: Seq[BinaryData], stopHash: BinaryData) extends BtcSerializable[Getheaders] {
+case class Getheaders(version: Long, locatorHashes: Seq[ByteVector], stopHash: ByteVector) extends BtcSerializable[Getheaders] {
   locatorHashes.foreach(h => require(h.length == 32))
   require(stopHash.length == 32)
 
@@ -488,16 +529,16 @@ case class Headers(headers: Seq[BlockHeader]) extends BtcSerializable[Headers] {
 object Getblocks extends BtcSerializer[Getblocks] {
   override def write(t: Getblocks, out: OutputStream, protocolVersion: Long): Unit = {
     writeUInt32(t.version.toInt, out)
-    writeCollection(t.locatorHashes, (h: BinaryData, o: OutputStream, _: Long) => o.write(h), out, protocolVersion)
-    writeBytes(t.stopHash, out)
+    writeCollection(t.locatorHashes, (h: ByteVector, o: OutputStream, _: Long) => o.write(h.toArray), out, protocolVersion)
+    writeBytes(t.stopHash.toArray, out)
   }
 
   override def read(in: InputStream, protocolVersion: Long): Getblocks = {
-    Getblocks(version = uint32(in), locatorHashes = readCollection(in, (i: InputStream, _: Long) => BinaryData(hash(i)), protocolVersion), stopHash = hash(in))
+    Getblocks(version = uint32(in), locatorHashes = readCollection(in, (i: InputStream, _: Long) => hash(i), protocolVersion), stopHash = hash(in))
   }
 }
 
-case class Getblocks(version: Long, locatorHashes: Seq[BinaryData], stopHash: BinaryData) extends BtcSerializable[Getblocks] {
+case class Getblocks(version: Long, locatorHashes: Seq[ByteVector], stopHash: ByteVector) extends BtcSerializable[Getblocks] {
   locatorHashes.foreach(h => require(h.length == 32))
   require(stopHash.length == 32)
 
@@ -522,10 +563,10 @@ object Reject extends BtcSerializer[Reject] {
   }
 
   override def read(in: InputStream, protocolVersion: Long): Reject = {
-    Reject(message = varstring(in), code = uint8(in), reason = varstring(in), Array.empty[Byte])
+    Reject(message = varstring(in), code = uint8(in), reason = varstring(in), ByteVector.empty)
   }
 }
 
-case class Reject(message: String, code: Long, reason: String, data: BinaryData) extends BtcSerializable[Reject] {
+case class Reject(message: String, code: Long, reason: String, data: ByteVector) extends BtcSerializable[Reject] {
   override def serializer: BtcSerializer[Reject] = Reject
 }
