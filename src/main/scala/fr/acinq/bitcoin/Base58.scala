@@ -60,8 +60,8 @@ object Base58Check {
    * @param data   date to be encoded
    * @return a Base58 string
    */
-  def encode(prefix: Byte, data: ByteVector): String = {
-    encode(prefix, data)
+  def encode(prefix: Byte, data: Seq[Byte]): String = {
+    encode(Seq(prefix), data)
   }
 
   /**
@@ -71,7 +71,7 @@ object Base58Check {
    * @return a Base58 String
    */
   def encode(prefix: Int, data: ByteVector): String = {
-    encode(Protocol.writeUInt32(prefix, ByteOrder.BIG_ENDIAN), data)
+    encode(Protocol.writeUInt32(prefix, ByteOrder.BIG_ENDIAN).toSeq, data.toSeq)
   }
 
   /**
@@ -80,9 +80,9 @@ object Base58Check {
    * @param data   data to be encoded
    * @return a Base58 String
    */
-  def encode(prefix: ByteVector, data: ByteVector): String = {
+  def encode(prefix: Seq[Byte], data: Seq[Byte]): String = {
     val prefixAndData = prefix ++ data
-    (prefixAndData ++ checksum(prefixAndData)).toBase58
+    ByteVector(prefixAndData ++ checksum(ByteVector(prefixAndData)).toSeq).toBase58
   }
 
   /**
